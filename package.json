@@ -1,0 +1,20 @@
+{
+  "name": "@pipeworx/mcp-eu-funding-tenders",
+  "version": "0.1.0",
+  "description": "EU Funding & Tenders Portal (SEDIA search API) MCP.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "keywords": ["mcp", "mcp-server", "model-context-protocol", "pipeworx", "eu-funding-tenders"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pipeworx-io/mcp-eu-funding-tenders"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}
