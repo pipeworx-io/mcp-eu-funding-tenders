@@ -2,6 +2,8 @@
 
 EU Funding & Tenders Portal MCP — Horizon Europe and every other EU funding call plus EU tenders: what is open, when it closes, and the topic identifier to quote in an application.
 
+Part of [Pipeworx](https://pipeworx.io) — an MCP gateway connecting AI agents to 1394+ live data sources.
+
 ## Tools
 
 - `eu_search_calls(query?, status?, programme?, limit?, page?)` — free-text search over EU grant topics (`type=1`). `status` takes plain words (`open` default, `forthcoming`, `closed`, `any`); `programme` takes a code such as `horizon`, `life`, `erasmus`, `digital`, `cef`, `eu4h`. Returns identifier, title, parent call, deadline, days remaining, status word, types of action, programme and portal URL.
@@ -38,7 +40,7 @@ Add to your MCP client (Claude Desktop, Cursor, Windsurf, etc.):
 }
 ```
 
-Or connect to the full Pipeworx gateway for access to all 1375+ data sources:
+Or connect to the full Pipeworx gateway for access to all 1394+ data sources:
 
 ```json
 {
@@ -62,7 +64,7 @@ The gateway picks the right tool and fills the arguments automatically.
 
 ## More
 
-- [All tools and guides](https://github.com/pipeworx-io/examples)
+- [Docs and guides](https://pipeworx.io/docs)
 - [pipeworx.io](https://pipeworx.io)
 
 ## License
