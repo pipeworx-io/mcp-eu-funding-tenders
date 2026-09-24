@@ -3,7 +3,7 @@
   "name": "io.github.pipeworx-io/eu-funding-tenders",
   "title": "Eu Funding Tenders",
   "description": "EU Funding & Tenders Portal (SEDIA search API) MCP.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "websiteUrl": "https://pipeworx.io/packs/eu-funding-tenders",
   "repository": {
     "url": "https://github.com/pipeworx-io/mcp-eu-funding-tenders",
