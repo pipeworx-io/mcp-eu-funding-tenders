@@ -1,6 +1,6 @@
 {
   "name": "@pipeworx/mcp-eu-funding-tenders",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "EU Funding & Tenders Portal (SEDIA search API) MCP.",
   "type": "module",
   "main": "src/index.ts",
@@ -26,7 +26,7 @@
     "@cloudflare/workers-types": "^4.20260405.1"
   },
   "pipeworx": {
-    "sourceHash": "v1-45bacf6e02525b1d9cf8d5f8cf50a7dcff7eb9b96b0896e1c0bad0523402c618",
-    "sourceCommit": "76aa8f5d9b5dc2f665563030647c68e661478864"
+    "sourceHash": "v1-5de5b8c232ee8f73f07746eee89a354bd0d53806ab8b505db30707d512fe12e3",
+    "sourceCommit": "4fa4c64448be06f4a2ee4cee19f756f3558a7cad"
   }
 }
