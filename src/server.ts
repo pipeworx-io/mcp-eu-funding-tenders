@@ -8,8 +8,9 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import pack from './index.js';
 
+
 const server = new Server(
-  { name: '@pipeworx/mcp-eu-funding-tenders', version: '0.1.2' },
+  { name: '@pipeworx/mcp-eu-funding-tenders', version: '0.1.3' },
   { capabilities: { tools: {} } },
 );
 
@@ -24,7 +25,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
   try {
-    const result = await pack.callTool(name, (args ?? {}) as Record<string, unknown>);
+    const callArgs = { ...((args ?? {}) as Record<string, unknown>) };
+    
+    const result = await pack.callTool(name, callArgs);
     return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   } catch (err) {
     return {
