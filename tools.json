@@ -1,0 +1,109 @@
+[
+  {
+    "name": "eu_search_calls",
+    "description": "Search Horizon Europe and every other EU funding call (grant topics) on the EU Funding & Tenders Portal by keyword. Returns the topic identifier to quote in an application (e.g. HORIZON-CL5-2026-09-D4-03), title, parent call identifier, submission deadline, status word (Open, Forthcoming, Closed), type of action, framework programme and portal URL. Answers \"is there EU funding for hydrogen storage\", \"which Horizon Europe calls cover AI in health\", \"what LIFE or Erasmus+ or Digital Europe calls mention circular economy\".",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Free-text search over topic titles, descriptions and keywords, e.g. \"battery recycling\". Omit to list everything matching the filters."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "open",
+            "forthcoming",
+            "closed",
+            "any"
+          ],
+          "description": "Call status in plain words (default \"open\")."
+        },
+        "programme": {
+          "type": "string",
+          "description": "Framework programme code, e.g. \"horizon\", \"life\", \"erasmus\", \"digital\", \"eu4h\". Supported: horizon, h2020, life, erasmus, crea, digital, cef, eu4h, cerv, amif, isf, smp, edf, rfcs, imcap, innovfund, emfaf, ucpm, i3, pppa, euba. A raw numeric frameworkProgramme id also works."
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Results per page, 1-50 (default 10)."
+        },
+        "page": {
+          "type": "integer",
+          "description": "1-based page number (default 1)."
+        }
+      }
+    }
+  },
+  {
+    "name": "eu_open_calls",
+    "description": "Currently open EU funding calls ordered by nearest submission deadline first, with days remaining computed at request time. Answers \"what EU grants can I still apply for\", \"which Horizon Europe calls close soon\", \"what is the next EU funding deadline for renewable energy\". Each row carries the topic identifier, title, deadline date, days until deadline, type of action, framework programme and portal URL.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Optional free-text filter, e.g. \"quantum\" or \"SME innovation\"."
+        },
+        "programme": {
+          "type": "string",
+          "description": "Optional framework programme code, e.g. \"horizon\", \"life\", \"cef\". Supported: horizon, h2020, life, erasmus, crea, digital, cef, eu4h, cerv, amif, isf, smp, edf, rfcs, imcap, innovfund, emfaf, ucpm, i3, pppa, euba."
+        },
+        "limit": {
+          "type": "integer",
+          "description": "How many calls to return, 1-50 (default 10)."
+        }
+      }
+    }
+  },
+  {
+    "name": "eu_get_topic",
+    "description": "Full detail for one EU funding call topic by its identifier, e.g. \"HORIZON-CL5-2026-09-D4-03\". Returns the tag-stripped expected-outcome and scope description, the admissibility and eligibility conditions, indicative budget with expected number of grants and EU contribution per project, types of action and grant-agreement types, deadline and deadline model, framework programme, destination, cross-cutting priorities, keywords and the submission links. Answers \"what does this Horizon Europe topic fund\", \"how much budget does topic X have\", \"what are the conditions and page limits for topic X\".",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "identifier": {
+          "type": "string",
+          "description": "Topic identifier exactly as the portal prints it, e.g. \"HORIZON-CL5-2026-09-D4-03\"."
+        },
+        "include_conditions": {
+          "type": "boolean",
+          "description": "Include the (long) admissibility/eligibility conditions text (default true)."
+        }
+      },
+      "required": [
+        "identifier"
+      ]
+    }
+  },
+  {
+    "name": "eu_external_action_tenders",
+    "description": "Search EuropeAid external-action contracts — the European Commission's own development cooperation, humanitarian aid and technical assistance tenders, published on the EU Funding & Tenders Portal with EuropeAid/… references. Covers roughly 2,400 records, all Commission-funded work delivered in partner countries. Returns the reference, title, contract budget and currency, submission deadline, status word, geographical zone and portal URL. Answers \"what EuropeAid contracts are open in Nigeria\", \"which EU development contracts cover water infrastructure\", \"EU technical assistance tenders in the Sahel\". For a contract notice published by a national or municipal buyer inside the EU, that is TED (Tenders Electronic Daily), a separate and far larger journal.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Free-text search over tender titles and descriptions, e.g. \"cloud services\" or \"Kenya energy\"."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "open",
+            "forthcoming",
+            "closed",
+            "any"
+          ],
+          "description": "Tender status in plain words (default \"open\")."
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Results per page, 1-50 (default 10)."
+        },
+        "page": {
+          "type": "integer",
+          "description": "1-based page number (default 1)."
+        }
+      }
+    }
+  }
+]

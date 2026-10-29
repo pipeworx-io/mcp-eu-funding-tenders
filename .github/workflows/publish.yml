@@ -150,3 +150,143 @@ jobs:
         run: |
           echo "published ${{ steps.check.outputs.name }}@${{ steps.check.outputs.version }}"
           echo "verify: npm view ${{ steps.check.outputs.name }} dist.attestations"
+
+      # Fleet #3767: list this version on the MCP Registry WITH its npm
+      # `packages` entry, now that npm genuinely serves it.
+      #
+      # release-packs.yml (pipeworx-core) already listed this pack on the
+      # registry, remotes-only, before this very workflow ran -- the registry
+      # listing and the npm publish happen in two different repos/workflows
+      # with nothing synchronizing them, and the registry validates a
+      # `packages` entry against npm AT PUBLISH TIME (modelcontextprotocol/
+      # registry internal/validators/registries/npm.go: it fetches
+      # <name>/<version> and requires package.json's mcpName to match), so an
+      # entry created before npm has the version can only ever be
+      # remotes-only. By the time this step runs (right after the step
+      # above, which either just published this version or found it already
+      # published), npm genuinely has it.
+      #
+      # publish-pack.sh (fleet #3767) knows this and does NOT create a
+      # registry entry at all for a gateway-mode pack whose version npm does
+      # not yet serve -- deliberately, because /v0/publish is create-only
+      # (a repeat call for the same name+version 400s "already exists") and
+      # a GitHub-OIDC JWT only ever carries PermissionActionPublish, never
+      # PermissionActionEdit (internal/api/handlers/v0/auth/github_oidc.go,
+      # buildPermissions), so there is no way to add `packages` to an entry
+      # after the fact. This step is therefore normally the FIRST and ONLY
+      # create call for this version's registry entry -- not a fix-up.
+      #
+      # Every pack repo carries this step (it is the one template every pack
+      # uses), but only a gateway-mode pack's server.json has a `packages`
+      # entry to add; every other pack reads mode=local below and exits.
+      - name: List on the MCP Registry with npm packages entry (gateway-mode packs)
+        # Bounded: the mcpName wait below is at most ~10 minutes by default.
+        timeout-minutes: 20
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          mode=$(node -p "require('./package.json').pipeworx?.mode || 'local'" 2>/dev/null || echo local)
+          if [ "$mode" != "gateway" ]; then
+            echo "mode=$mode -- not a gateway-mode pack, nothing to list on the registry from here"
+            exit 0
+          fi
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          slug=$(node -p "require('./package.json').pipeworx.slug")
+          server_name="io.github.pipeworx-io/$slug"
+
+          # The registry's own npm validator fetches <name>/<version> from
+          # registry.npmjs.org and requires its mcpName to match. A fresh
+          # publish is NOT there immediately: npm's own publish output says
+          # "Your package is being processed and may take a few minutes to
+          # become available". The old wait here was 6 x 5s through
+          # `npm view`, which also reads the npm CLI's local cache -- and the
+          # "Skip if this version is already published" step above had just
+          # cached this package's packument WITHOUT the new version (the
+          # registry serves it max-age=300). On edgar 0.4.0 (fleet #3761) the
+          # wait expired and the listing was left absent until a manual
+          # re-run a minute later. So: ask the registry directly, uncached,
+          # at the same per-version URL the validator reads, for up to
+          # MCPNAME_WAIT_TRIES x MCPNAME_WAIT_SECONDS (default 40 x 15s = 10
+          # min), and if it still disagrees, FAIL this step. A missing
+          # listing is the silent outcome this step exists to prevent; a red
+          # run is what makes it visible, and "Re-run failed jobs" retries it
+          # (the publish step skips an already-published version).
+          tries="${MCPNAME_WAIT_TRIES:-40}"
+          pause="${MCPNAME_WAIT_SECONDS:-15}"
+          npm_registry="${NPM_REGISTRY_URL:-https://registry.npmjs.org}"
+          mcpname=""
+          for i in $(seq 1 "$tries"); do
+            mcpname=$(node -e '
+              const [registry, name, version] = process.argv.slice(1);
+              fetch(`${registry}/${name}/${version}`, {
+                headers: { accept: "application/json", "cache-control": "no-cache" },
+                cache: "no-store",
+              }).then(async (r) => {
+                if (!r.ok) return;
+                const j = await r.json();
+                if (j && typeof j.mcpName === "string") process.stdout.write(j.mcpName);
+              }).catch(() => {});
+            ' "$npm_registry" "$name" "$version" 2>/dev/null || true)
+            if [ "$mcpname" = "$server_name" ]; then
+              echo "npm serves $name@$version with mcpName=$server_name (check $i of $tries)"
+              break
+            fi
+            if [ "$i" -lt "$tries" ]; then sleep "$pause"; fi
+          done
+          if [ "$mcpname" != "$server_name" ]; then
+            echo "::error::npm still does not serve $name@$version with mcpName=$server_name after $tries checks ${pause}s apart (last saw: ${mcpname:-nothing}) -- the MCP Registry listing was NOT created. Re-run this workflow's failed job to retry; the npm publish itself is done and will be skipped."
+            exit 1
+          fi
+
+          node -e '
+            const fs = require("fs");
+            const doc = JSON.parse(fs.readFileSync("server.json", "utf8"));
+            if (!doc.packages) {
+              doc.packages = [{
+                registryType: "npm",
+                identifier: process.argv[1],
+                version: process.argv[2],
+                transport: { type: "stdio" },
+                environmentVariables: [{
+                  name: "PIPEWORX_API_KEY",
+                  description: "Optional Pipeworx API key. Without it calls are anonymous and capped daily; a free key raises the cap.",
+                  isRequired: false,
+                  isSecret: true
+                }]
+              }];
+              fs.writeFileSync("server.json", JSON.stringify(doc, null, 2) + "\n");
+              console.log("server.json: added packages entry for " + process.argv[1] + "@" + process.argv[2]);
+            } else {
+              console.log("server.json already carries a packages entry");
+            }
+          ' "$name" "$version"
+
+          if ! command -v mcp-publisher &>/dev/null; then
+            url=$(gh api repos/modelcontextprotocol/registry/releases/latest \
+              --jq '.assets[] | select(.name | test("linux_amd64\\.tar\\.gz$")) | .browser_download_url' | head -1)
+            if [ -z "$url" ]; then
+              echo "::warning::could not resolve the mcp-publisher release asset -- MCP Registry listing not updated"
+              exit 0
+            fi
+            curl -sSL "$url" | tar xz mcp-publisher
+            sudo mv mcp-publisher /usr/local/bin/mcp-publisher
+          fi
+          mcp-publisher login github-oidc
+
+          out=$(mcp-publisher publish 2>&1) && rc=0 || rc=$?
+          echo "$out"
+          if [ $rc -eq 0 ]; then
+            echo "listed $name@$version on the MCP Registry with a packages entry"
+          elif echo "$out" | grep -qiE "already exists"; then
+            # The expected shape if this exact version was already listed by
+            # some other path (a legacy publish from before this fix, or a
+            # repeat run of this workflow). A GitHub-OIDC JWT cannot edit an
+            # existing entry (see the step comment above), so there is
+            # nothing more this step can do for THIS version -- the next
+            # release's version will get packages correctly from here.
+            echo "::warning::$server_name $version is already on the MCP Registry (likely remotes-only, from before this fix) and a GitHub-OIDC token cannot edit an existing entry to add packages -- this will self-correct on the next version bump"
+          else
+            echo "::warning::MCP Registry listing failed for $name@$version: $out"
+          fi
