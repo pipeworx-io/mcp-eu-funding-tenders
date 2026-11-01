@@ -143,6 +143,56 @@ jobs:
             repo='${{ github.event.repository.name }}'
             echo "::error::npm returned ENEEDAUTH. This almost certainly means no trusted publisher is configured for this package yet, NOT that a token is missing — this workflow publishes over OIDC and deliberately has no credential. Fix: from pipeworx-core, npm login (interactive, 2FA) then ./scripts/npm-trust-bulk.sh --only ${repo#mcp-}. See docs/npm-trusted-publishing.md."
           fi
+          if [ $rc -ne 0 ] && echo "$out" | grep -q 'TLOG_CREATE_ENTRY_ERROR'; then
+            # fleet #3894: an equivalent Sigstore transparency-log entry
+            # already exists for THIS exact tarball+version, so this version
+            # can never publish — not now, not on a re-run of this very
+            # workflow. Re-dispatching changes nothing; only a version the
+            # content has never seen will. pipeworx-core's release-packs.mjs
+            # (scripts/npm-release-status.mjs classifies the cause as `tlog`)
+            # computes that version past this one on its own next pass —
+            # nobody needs to act on this by hand.
+            echo "::error::npm returned TLOG_CREATE_ENTRY_ERROR (409): an equivalent entry already exists in the transparency log for this exact version+tarball, so this version can never publish. Re-running this workflow will fail the same way. The next pipeworx-core release run computes a version past this one and retries automatically. See docs/npm-trusted-publishing.md."
+          fi
+          if [ $rc -ne 0 ] && echo "$out" | grep -qi 'Cannot publish over previously staged version'; then
+            # fleet #3874: a trusted-publishing (OIDC) `npm publish` stages the
+            # tarball under a transient "0.0.0-stage" version before npm
+            # commits the real one server-side, and this 409 can fire while
+            # that commit is still in flight -- the CLI call fails even though
+            # npm finishes the real publish on its own moments later. Observed
+            # live on mcp-romania-tenders 0.1.0, all inside ONE `npm publish`
+            # call: staged 05:15:21Z, this 409 at 05:15:40Z, the real version
+            # live at 05:16:18Z. A hard failure here skips every later step
+            # (Report, the MCP Registry listing) even though npm ends up
+            # actually serving the version -- which is exactly how a pack
+            # lands on npm with no registry entry. Poll uncached (never the
+            # CLI's own packument cache) before believing the 409 is real.
+            name='${{ steps.check.outputs.name }}'
+            version='${{ steps.check.outputs.version }}'
+            npm_registry="${NPM_REGISTRY_URL:-https://registry.npmjs.org}"
+            tries="${STAGED_WAIT_TRIES:-12}"
+            pause="${STAGED_WAIT_SECONDS:-10}"
+            echo "::warning::npm returned 409 'Cannot publish over previously staged version' for $name@$version -- this can be npm's own staging race rather than a real failure. Polling uncached for up to $((tries * pause))s..."
+            landed=""
+            for i in $(seq 1 "$tries"); do
+              landed=$(node -e '
+                const [registry, name, version] = process.argv.slice(1);
+                fetch(`${registry}/${name}/${version}`, {
+                  headers: { accept: "application/json", "cache-control": "no-cache" },
+                  cache: "no-store",
+                }).then((r) => { if (r.ok) process.stdout.write("yes"); }).catch(() => {});
+              ' "$npm_registry" "$name" "$version" 2>/dev/null || true)
+              if [ "$landed" = "yes" ]; then
+                echo "npm now serves $name@$version (check $i of $tries) -- the staging race resolved; treating the publish as successful."
+                rc=0
+                break
+              fi
+              if [ "$i" -lt "$tries" ]; then sleep "$pause"; fi
+            done
+            if [ "$landed" != "yes" ]; then
+              echo "::error::npm still does not serve $name@$version after $tries checks ${pause}s apart -- the 409 was a real failure, not a staging race."
+            fi
+          fi
           exit $rc
 
       - name: Report
@@ -263,14 +313,24 @@ jobs:
             }
           ' "$name" "$version"
 
+          # Fleet #3790: NO PIPES in this block. `set -o pipefail` is on above,
+          # and the old asset lookup (gh api --jq piped into head -1) matched TWO
+          # release assets (mcp-publisher_ AND registry_linux_amd64.tar.gz), so
+          # head closed the pipe while gh was still writing: SIGPIPE, exit 141,
+          # step dead right after "added packages entry", listing never created
+          # (mcp-arcgis-sumter run 40800167876, mcp-launches 40818628724; 7 of
+          # 32 sampled gateway-mode packs unlisted on 10-29). jq now picks the
+          # ONE publisher asset itself, and the tarball goes to a file first.
           if ! command -v mcp-publisher &>/dev/null; then
             url=$(gh api repos/modelcontextprotocol/registry/releases/latest \
-              --jq '.assets[] | select(.name | test("linux_amd64\\.tar\\.gz$")) | .browser_download_url' | head -1)
+              --jq '[.assets[] | select(.name | test("^mcp-publisher_linux_amd64\\.tar\\.gz$")) | .browser_download_url][0] // empty')
             if [ -z "$url" ]; then
               echo "::warning::could not resolve the mcp-publisher release asset -- MCP Registry listing not updated"
               exit 0
             fi
-            curl -sSL "$url" | tar xz mcp-publisher
+            tgz="${RUNNER_TEMP:-/tmp}/mcp-publisher.tar.gz"
+            curl -sSL -o "$tgz" "$url"
+            tar xzf "$tgz" mcp-publisher
             sudo mv mcp-publisher /usr/local/bin/mcp-publisher
           fi
           mcp-publisher login github-oidc
